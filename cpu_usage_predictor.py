@@ -8,7 +8,8 @@ from tensorflow import keras
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 class CPUUsagePredictor:
     """
@@ -551,42 +552,135 @@ class CPUUsagePredictor:
         }
     
     def plot_results(self, hourly_df, forecast_df, eval_results):
-        """Plot historical data, predictions, and forecast."""
-        fig, axes = plt.subplots(2, 1, figsize=(15, 10))
+        """Plot historical data, predictions, and forecast using Plotly."""
+        # Create subplots
+        fig = make_subplots(
+            rows=2, cols=1,
+            subplot_titles=(
+                'Model Validation: Actual vs Predicted CPU Usage',
+                'CPU Usage Forecast: Next 7 Days'
+            ),
+            vertical_spacing=0.12,
+            row_heights=[0.5, 0.5]
+        )
         
         # Plot 1: Test predictions vs actual
-        ax1 = axes[0]
         test_size = len(eval_results['actual'])
         test_hours = hourly_df['sample_hour'].values[-test_size:]
         
-        ax1.plot(test_hours, eval_results['actual'], 
-                label='Actual CPU %', color='blue', linewidth=2)
-        ax1.plot(test_hours, eval_results['predictions'], 
-                label='Predicted CPU %', color='red', linewidth=2, alpha=0.7)
-        ax1.fill_between(test_hours, eval_results['actual'], eval_results['predictions'],
-                         alpha=0.3, color='gray')
-        ax1.set_xlabel('Time')
-        ax1.set_ylabel('CPU Usage (%)')
-        ax1.set_title('Model Validation: Actual vs Predicted CPU Usage')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
+        fig.add_trace(
+            go.Scatter(
+                x=test_hours,
+                y=eval_results['actual'],
+                mode='lines',
+                name='Actual CPU %',
+                line=dict(color='blue', width=2),
+                showlegend=True
+            ),
+            row=1, col=1
+        )
         
-        # Plot 2: Future forecast
-        ax2 = axes[1]
+        fig.add_trace(
+            go.Scatter(
+                x=test_hours,
+                y=eval_results['predictions'],
+                mode='lines',
+                name='Predicted CPU %',
+                line=dict(color='red', width=2),
+                showlegend=True
+            ),
+            row=1, col=1
+        )
+        
+        # Add shaded area for prediction error
+        fig.add_trace(
+            go.Scatter(
+                x=np.concatenate([test_hours, test_hours[::-1]]),
+                y=np.concatenate([
+                    eval_results['actual'],
+                    eval_results['predictions'][::-1]
+                ]),
+                fill='toself',
+                fillcolor='rgba(128, 128, 128, 0.3)',
+                line=dict(color='rgba(255,255,255,0)'),
+                showlegend=False,
+                name='Prediction Error'
+            ),
+            row=1, col=1
+        )
+        
+        # Plot 2: Recent history + Future forecast
         last_24h = hourly_df.tail(24)
-        ax2.plot(last_24h['sample_hour'], last_24h['avg_cpu_pct'],
-                label='Recent Historical', color='blue', linewidth=2)
-        ax2.plot(forecast_df['sample_hour'], forecast_df['predicted_cpu_pct'],
-                label='7-Day Forecast', color='green', linewidth=2)
-        ax2.axhline(y=80, color='orange', linestyle='--', label='High Threshold (80%)')
-        ax2.axhline(y=95, color='red', linestyle='--', label='Critical Threshold (95%)')
-        ax2.set_xlabel('Time')
-        ax2.set_ylabel('CPU Usage (%)')
-        ax2.set_title('CPU Usage Forecast: Next 7 Days')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
         
-        plt.tight_layout()
+        fig.add_trace(
+            go.Scatter(
+                x=last_24h['sample_hour'],
+                y=last_24h['avg_cpu_pct'],
+                mode='lines',
+                name='Recent Historical',
+                line=dict(color='blue', width=2),
+                showlegend=True
+            ),
+            row=2, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=forecast_df['sample_hour'],
+                y=forecast_df['predicted_cpu_pct'],
+                mode='lines',
+                name='7-Day Forecast',
+                line=dict(color='green', width=2),
+                showlegend=True
+            ),
+            row=2, col=1
+        )
+        
+        # Add threshold lines
+        all_times = pd.concat([
+            last_24h['sample_hour'],
+            forecast_df['sample_hour']
+        ])
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[all_times.min(), all_times.max()],
+                y=[80, 80],
+                mode='lines',
+                name='High Threshold (80%)',
+                line=dict(color='orange', width=2, dash='dash'),
+                showlegend=True
+            ),
+            row=2, col=1
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[all_times.min(), all_times.max()],
+                y=[95, 95],
+                mode='lines',
+                name='Critical Threshold (95%)',
+                line=dict(color='red', width=2, dash='dash'),
+                showlegend=True
+            ),
+            row=2, col=1
+        )
+        
+        # Update layout
+        fig.update_xaxes(title_text="Time", row=1, col=1)
+        fig.update_xaxes(title_text="Time", row=2, col=1)
+        fig.update_yaxes(title_text="CPU Usage (%)", row=1, col=1)
+        fig.update_yaxes(title_text="CPU Usage (%)", row=2, col=1)
+        
+        fig.update_layout(
+            height=900,
+            showlegend=True,
+            hovermode='x unified',
+            template='plotly_white',
+            title_text="CPU Usage Prediction Analysis",
+            title_x=0.5
+        )
+        
         return fig
 
 
@@ -611,13 +705,13 @@ forecast = results['forecast_df']
 evaluation = results['eval_results']
 anomalies = results['anomaly_report']
 
-# Plot results (optional)
-# fig = predictor.plot_results(
-#     results['hourly_df'],
-#     results['forecast_df'],
-#     results['eval_results']
-# )
-# plt.show()
+# Plot results with Plotly
+fig = predictor.plot_results(
+    results['hourly_df'],
+    results['forecast_df'],
+    results['eval_results']
+)
+fig.show()
 
 # Get specific predictions
 print(forecast[['sample_hour', 'predicted_cpu_pct']].head(24))
